@@ -73,8 +73,6 @@ public class HpackDecoder {
     private volatile boolean countedCookie;
     private volatile int headerSize = 0;
 
-    private final StringBuilder stringBuilder = new StringBuilder();
-
     HpackDecoder(int maxMemorySize) {
         this.maxMemorySizeHard = maxMemorySize;
         this.maxMemorySizeSoft = maxMemorySize;
@@ -223,42 +221,33 @@ public class HpackDecoder {
         if (huffman) {
             return readHuffmanString(length, buffer, isFieldName);
         }
-        // The shared StringBuilder must always be reset, including when the
-        // header field name / value is rejected as invalid, since the
-        // connection may continue to be used after a single stream is reset.
-        try {
-            for (int i = 0; i < length; ++i) {
-                char c = (char) (buffer.get() & 0xFF);
-                if (isFieldName) {
-                    if (HttpParser.isToken(c) && !Character.isUpperCase(c)) {
-                        stringBuilder.append(c);
-                    } else {
-                        throw new IllegalArgumentException(
-                                sm.getString("hpackdecoder.illegalCharacterName", Character.toString(c)));
-                    }
+        StringBuilder stringBuilder = new StringBuilder(length);
+        for (int i = 0; i < length; ++i) {
+            char c = (char) (buffer.get() & 0xFF);
+            if (isFieldName) {
+                if (HttpParser.isToken(c) && !Character.isUpperCase(c)) {
+                    stringBuilder.append(c);
                 } else {
-                    if ((i == 0 || i == length - 1) && HttpParser.isFieldVChar(c) ||
-                            i > 0 && i < length - 1 && HttpParser.isFieldContent(c)) {
-                        stringBuilder.append(c);
-                    } else {
-                        throw new IllegalArgumentException(
-                                sm.getString("hpackdecoder.illegalCharacterValue", Character.toString(c)));
-                    }
+                    throw new IllegalArgumentException(
+                            sm.getString("hpackdecoder.illegalCharacterName", Character.toString(c)));
+                }
+            } else {
+                if ((i == 0 || i == length - 1) && HttpParser.isFieldVChar(c) ||
+                        i > 0 && i < length - 1 && HttpParser.isFieldContent(c)) {
+                    stringBuilder.append(c);
+                } else {
+                    throw new IllegalArgumentException(
+                            sm.getString("hpackdecoder.illegalCharacterValue", Character.toString(c)));
                 }
             }
-            return stringBuilder.toString();
-        } finally {
-            stringBuilder.setLength(0);
         }
+        return stringBuilder.toString();
     }
 
     private String readHuffmanString(int length, ByteBuffer buffer, boolean isFieldName) throws HpackException {
-        try {
-            HPackHuffman.decode(buffer, length, stringBuilder, isFieldName);
-            return stringBuilder.toString();
-        } finally {
-            stringBuilder.setLength(0);
-        }
+        StringBuilder stringBuilder = new StringBuilder(length);
+        HPackHuffman.decode(buffer, length, stringBuilder, isFieldName);
+        return stringBuilder.toString();
     }
 
     private String handleIndexedHeaderName(int index) throws HpackException {
